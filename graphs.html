@@ -12,23 +12,84 @@
     color: #000;
     height: 100vh;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    overflow: hidden;
   }
-  #bar {
+
+  /* ── sidebar ── */
+  #sidebar {
+    width: 220px;
+    min-width: 220px;
+    border-right: 1px solid #ccc;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: width .15s, min-width .15s;
+  }
+  #sidebar.collapsed {
+    width: 0;
+    min-width: 0;
+    border-right: none;
+  }
+  #sidebar-header {
+    padding: 8px 10px;
+    border-bottom: 1px solid #ccc;
+    font-weight: bold;
+    font-size: 12px;
+    color: #555;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    user-select: none;
+    white-space: nowrap;
+  }
+  #tree {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0;
+  }
+  .folder { user-select: none; }
+  .folder-row {
     display: flex;
     align-items: center;
-    gap: 28px;
-    padding: 8px 14px;
-    border-bottom: 1px solid #ccc;
-    flex-wrap: wrap;
+    gap: 5px;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-weight: bold;
+    color: #333;
+    white-space: nowrap;
   }
-  .group { display: flex; align-items: center; gap: 8px; }
-  .group-label { font-weight: bold; }
-  .group label { display: flex; align-items: center; gap: 3px; cursor: pointer; }
-  .group input[type=radio] { cursor: pointer; }
-  .group label.unavailable { color: #bbb; cursor: default; }
-  .group label.unavailable input { cursor: default; }
-  #file-label { color: #888; margin-left: auto; font-size: 11px; }
+  .folder-row:hover { background: #f0f0f0; }
+  .folder-arrow {
+    font-size: 10px;
+    width: 10px;
+    display: inline-block;
+    transition: transform .12s;
+  }
+  .folder.open > .folder-row .folder-arrow { transform: rotate(90deg); }
+  .folder-children { display: none; }
+  .folder.open > .folder-children { display: block; }
+  .file-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px 3px 28px;
+    cursor: pointer;
+    color: #444;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .file-row:hover { background: #f0f0f0; }
+  .file-row.active { background: #000; color: #fff; }
+
+  /* ── main ── */
+  #main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+  }
   #stage {
     flex: 1;
     display: flex;
@@ -39,12 +100,15 @@
   }
   canvas { max-width: 100%; max-height: 100%; display: block; }
   #loading { position: absolute; color: #555; }
+
+  /* ── nav bar ── */
   #nav {
     display: flex;
     align-items: center;
     gap: 10px;
     padding: 7px 14px;
     border-top: 1px solid #ccc;
+    flex-shrink: 0;
   }
   button {
     font-size: 13px;
@@ -52,57 +116,50 @@
     background: #fff;
     padding: 3px 10px;
     cursor: pointer;
+    white-space: nowrap;
   }
   button:hover { background: #eee; }
   button:disabled { color: #bbb; cursor: default; background: #fff; }
   button.on { background: #000; color: #fff; border-color: #000; }
+  #btn-tree { font-size: 15px; padding: 3px 8px; }
   #page-info { min-width: 60px; text-align: center; }
   #sep { color: #ccc; }
   input[type=range] { width: 90px; cursor: pointer; }
   #fps-val { min-width: 38px; }
+  #file-label {
+    margin-left: auto;
+    color: #999;
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 300px;
+  }
 </style>
 </head>
 <body>
 
-<div id="bar">
-  <div class="group">
-    <span class="group-label">regime</span>
-    <label><input type="radio" name="regime" value="LG"> LG</label>
-    <label><input type="radio" name="regime" value="LM"> LM</label>
-    <label><input type="radio" name="regime" value="LMG"> LMG</label>
-    <label><input type="radio" name="regime" value="MG"> MG</label>
-  </div>
-  <div class="group">
-    <span class="group-label">type</span>
-    <label><input type="radio" name="type" value="AS"> AS</label>
-    <label><input type="radio" name="type" value="TW"> TW</label>
-  </div>
-  <div class="group" id="eps-group">
-    <span class="group-label">eps</span>
-    <label><input type="radio" name="eps" value="1"> 1e-1</label>
-    <label><input type="radio" name="eps" value="2"> 1e-2</label>
-    <label><input type="radio" name="eps" value="3"> 1e-3</label>
-    <label><input type="radio" name="eps" value="4"> 1e-4</label>
-    <label><input type="radio" name="eps" value="5"> 1e-5</label>
-    <label><input type="radio" name="eps" value="6"> 1e-6</label>
-    <label><input type="radio" name="eps" value="8"> 1e-8</label>
-  </div>
-  <span id="file-label"></span>
+<div id="sidebar">
+  <div id="sidebar-header">Files</div>
+  <div id="tree"><em style="padding:8px 12px;display:block;color:#aaa">scanning…</em></div>
 </div>
 
-<div id="stage">
-  <div id="loading">select a case above</div>
-  <canvas id="cv" style="display:none"></canvas>
-</div>
-
-<div id="nav">
-  <button id="btn-prev" disabled>&#8592;</button>
-  <button id="btn-next" disabled>&#8594;</button>
-  <span id="page-info">— / —</span>
-  <span id="sep">|</span>
-  <button id="btn-play" disabled>&#9654; play</button>
-  <input type="range" id="fps-slider" min="1" max="30" value="8" disabled>
-  <span id="fps-val">8 fps</span>
+<div id="main">
+  <div id="stage">
+    <div id="loading">select a file</div>
+    <canvas id="cv" style="display:none"></canvas>
+  </div>
+  <div id="nav">
+    <button id="btn-tree" title="Toggle file tree">☰</button>
+    <button id="btn-prev" disabled>&#8592;</button>
+    <button id="btn-next" disabled>&#8594;</button>
+    <span id="page-info">— / —</span>
+    <span id="sep">|</span>
+    <button id="btn-play" disabled>&#9654; play</button>
+    <input type="range" id="fps-slider" min="1" max="30" value="8" disabled>
+    <span id="fps-val">8 fps</span>
+    <span id="file-label"></span>
+  </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -110,40 +167,101 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-const FILES = {
-  "LG AS 1":  "LG AS/TEST-1_LG_AS__implicit__N_60__eps_1e-01.pdf",
-  "LG AS 2":  "LG AS/TEST-2_LG_AS__implicit__N_60__eps_1e-02.pdf",
-  "LG AS 3":  "LG AS/TEST-3_LG_AS__implicit__N_60__eps_1e-03.pdf",
-  "LG AS 4":  "LG AS/TEST-4_LG_AS__implicit__N_60__eps_1e-04.pdf",
-  "LG AS 8":  "LG AS/TEST-8_LG_AS__implicit__N_60__eps_1e-08.pdf",
-  "LG TW 3":  "LG TW/TEST-3_LG_TW__implicit__N_60__eps_1e-03.pdf",
-  "LG TW 4":  "LG TW/TEST-4_LG_TW__implicit__N_60__eps_1e-04.pdf",
-  "LG TW 8":  "LG TW/TEST-8_LG_TW__implicit__N_60__eps_1e-08.pdf",
-  "LM AS 1":  "LM AS/TEST-1_LM_AS__implicit__N_60__eps_1e-01.pdf",
-  "LM AS 2":  "LM AS/TEST-2_LM_AS__implicit__N_60__eps_1e-02.pdf",
-  "LM AS 3":  "LM AS/TEST-3_LM_AS__implicit__N_60__eps_1e-03.pdf",
-  "LM AS 4":  "LM AS/TEST-4_LM_AS__implicit__N_60__eps_1e-04.pdf",
-  "LM AS 5":  "LM AS/TEST-5_LM_AS__implicit__N_60__eps_1e-05.pdf",
-  "LM AS 6":  "LM AS/TEST-6_LM_AS__implicit__N_60__eps_1e-06.pdf",
-  "LMG AS 1": "LMG AS/TEST-1_LMG_AS__implicit__N_60__eps_1e-01.pdf",
-  "LMG AS 2": "LMG AS/TEST-2_LMG_AS__implicit__N_60__eps_1e-02.pdf",
-  "LMG AS 3": "LMG AS/TEST-3_LMG_AS__implicit__N_60__eps_1e-03.pdf",
-  "LMG AS 4": "LMG AS/TEST-4_LMG_AS__implicit__N_60__eps_1e-04.pdf",
-  "LMG AS 8": "LMG AS/TEST-8_LMG_AS__implicit__N_60__eps_1e-08.pdf",
-  "MG AS 1":  "MG AS/TEST-1_MG_AS__implicit__N_60__eps_1e-01.pdf",
-  "MG AS 2":  "MG AS/TEST-2_MG_AS__implicit__N_60__eps_1e-02.pdf",
-  "MG AS 3":  "MG AS/TEST-3_MG_AS__implicit__N_60__eps_1e-03.pdf",
-  "MG AS 4":  "MG AS/TEST-4_MG_AS__implicit__N_60__eps_1e-04.pdf",
-  "MG AS 5":  "MG AS/TEST-5_MG_AS__implicit__N_60__eps_1e-05.pdf",
-  "MG AS 6":  "MG AS/TEST-6_MG_AS__implicit__N_60__eps_1e-06.pdf",
-  "MG TW 1":  "MG TW/TEST-1_MG_TW__implicit__N_60__eps_1e-01.pdf",
-  "MG TW 2":  "MG TW/TEST-2_MG_TW__implicit__N_60__eps_1e-02.pdf",
-  "MG TW 3":  "MG TW/TEST-3_MG_TW__implicit__N_60__eps_1e-03.pdf",
-  "MG TW 4":  "MG TW/TEST-4_MG_TW__implicit__N_60__eps_1e-04.pdf",
-  "MG TW 5":  "MG TW/TEST-5_MG_TW__implicit__N_60__eps_1e-05.pdf",
-  "MG TW 6":  "MG TW/TEST-6_MG_TW__implicit__N_60__eps_1e-06.pdf",
-};
+// ── sidebar toggle ──────────────────────────────────────────────────────────
+const sidebar = document.getElementById('sidebar');
+document.getElementById('btn-tree').onclick = () =>
+  sidebar.classList.toggle('collapsed');
 
+// ── directory scan ──────────────────────────────────────────────────────────
+// Strategy: fetch the directory listing from the server.
+// Works when served via a standard file server that renders directory listings
+// (e.g. python -m http.server, nginx autoindex on, etc.).
+// Falls back to a manual scan hint if the server doesn't expose listings.
+
+const treeEl = document.getElementById('tree');
+
+async function buildTree() {
+  // Scan root for folders, then each folder for PDFs
+  const rootEntries = await listDir('./');
+  if (!rootEntries) {
+    treeEl.innerHTML = '<em style="padding:8px 12px;display:block;color:#aaa">no listing available<br>need a file server with directory index</em>';
+    return;
+  }
+
+  // filter to directories (entries ending with /)
+  const dirs = rootEntries.filter(e => e.endsWith('/'));
+  if (dirs.length === 0) {
+    // maybe PDFs are in root
+    const pdfs = rootEntries.filter(e => e.toLowerCase().endsWith('.pdf'));
+    if (pdfs.length) buildFolderNode(treeEl, '.', pdfs);
+    else treeEl.innerHTML = '<em style="padding:8px 12px;display:block;color:#aaa">no PDFs found</em>';
+    return;
+  }
+
+  treeEl.innerHTML = '';
+  for (const dir of dirs) {
+    const name = dir.replace(/\/$/, '');
+    const files = await listDir('./' + dir);
+    const pdfs  = files ? files.filter(e => e.toLowerCase().endsWith('.pdf')) : [];
+    if (pdfs.length === 0) continue;
+    const paths = pdfs.map(f => name + '/' + f);
+    buildFolderNode(treeEl, name, paths);
+  }
+}
+
+// Parse directory listing HTML to extract linked filenames/dirs
+async function listDir(url) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const html = await res.text();
+    const doc  = new DOMParser().parseFromString(html, 'text/html');
+    const links = [...doc.querySelectorAll('a[href]')]
+      .map(a => a.getAttribute('href'))
+      // exclude parent dir links, query params, absolute URLs
+      .filter(h => h && !h.startsWith('?') && !h.startsWith('/') && !h.startsWith('http') && h !== '../');
+    return links.length ? links : null;
+  } catch { return null; }
+}
+
+function buildFolderNode(parent, name, paths) {
+  const folderDiv = document.createElement('div');
+  folderDiv.className = 'folder open';
+
+  const row = document.createElement('div');
+  row.className = 'folder-row';
+  row.innerHTML = `<span class="folder-arrow">▶</span>📁 ${name}`;
+  row.onclick = () => folderDiv.classList.toggle('open');
+
+  const children = document.createElement('div');
+  children.className = 'folder-children';
+
+  for (const path of paths) {
+    const filename = path.split('/').pop();
+    // pretty-print: strip common boilerplate, keep TEST-N + eps
+    const label = filename.replace(/\.pdf$/i, '');
+
+    const fileRow = document.createElement('div');
+    fileRow.className = 'file-row';
+    fileRow.textContent = label;
+    fileRow.title = path;
+    fileRow.dataset.path = path;
+    fileRow.onclick = () => {
+      document.querySelectorAll('.file-row.active').forEach(r => r.classList.remove('active'));
+      fileRow.classList.add('active');
+      loadPDF(path);
+    };
+    children.appendChild(fileRow);
+  }
+
+  folderDiv.appendChild(row);
+  folderDiv.appendChild(children);
+  parent.appendChild(folderDiv);
+}
+
+buildTree();
+
+// ── PDF viewer ──────────────────────────────────────────────────────────────
 let pages = [], current = 0, playing = false, playTimer = null, loadController = null;
 
 const cv      = document.getElementById('cv');
@@ -159,48 +277,13 @@ const fpsVal  = document.getElementById('fps-val');
 
 slider.oninput = () => { fpsVal.textContent = slider.value + ' fps'; };
 
-function getRadio(name) {
-  const el = document.querySelector(`input[name="${name}"]:checked`);
-  return el ? el.value : null;
-}
-
-function updateEpsAvailability() {
-  const regime = getRadio('regime');
-  const type   = getRadio('type');
-  document.querySelectorAll('#eps-group label').forEach(lbl => {
-    const val    = lbl.querySelector('input').value;
-    const exists = !regime || !type || (`${regime} ${type} ${val}` in FILES);
-    lbl.classList.toggle('unavailable', !exists);
-    lbl.querySelector('input').disabled = !exists;
-    if (!exists && lbl.querySelector('input').checked)
-      lbl.querySelector('input').checked = false;
-  });
-}
-
-function tryLoad() {
-  const regime = getRadio('regime');
-  const type   = getRadio('type');
-  const eps    = getRadio('eps');
-  if (!regime || !type || !eps) return;
-  const path = FILES[`${regime} ${type} ${eps}`];
-  if (path) loadPDF(path);
-}
-
-document.querySelectorAll('input[name="regime"], input[name="type"]').forEach(r =>
-  r.addEventListener('change', () => { updateEpsAvailability(); tryLoad(); })
-);
-document.querySelectorAll('input[name="eps"]').forEach(r =>
-  r.addEventListener('change', tryLoad)
-);
-
-const BATCH = 8; // pages rendered in parallel
+const BATCH = 8;
 
 async function loadPDF(path) {
   stopPlay();
   pages = []; current = 0;
-
   cv.style.display = 'none';
-  loading.textContent = '.';
+  loading.textContent = 'loading…';
   loading.style.display = 'block';
   fileLbl.textContent = path;
   setNav(false);
@@ -217,11 +300,10 @@ async function loadPDF(path) {
     return;
   }
 
-  const n     = pdf.numPages;
-  const scale = window.devicePixelRatio * 1.5;
+  const n      = pdf.numPages;
+  const scale  = window.devicePixelRatio * 1.5;
   const result = new Array(n);
 
-  // render in parallel batches
   for (let start = 0; start < n; start += BATCH) {
     if (signal.aborted) return;
     const end = Math.min(start + BATCH, n);
@@ -235,7 +317,6 @@ async function loadPDF(path) {
         result[i]  = await createImageBitmap(off);
       })
     );
-    // show first page as soon as first batch is done
     if (start === 0 && !signal.aborted) {
       pages = result.slice(0, end);
       loading.style.display = 'none';
@@ -245,10 +326,9 @@ async function loadPDF(path) {
       slider.disabled = false;
     }
   }
-
   if (signal.aborted) return;
   pages = result;
-  showPage(current); // refresh counts
+  showPage(current);
 }
 
 function showPage(idx) {
