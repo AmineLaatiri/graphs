@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>4LMNC viewer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: sans-serif;
+    font-size: 13px;
+    background: #fff;
+    color: #000;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  #bar {
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    padding: 8px 14px;
+    border-bottom: 1px solid #ccc;
+    flex-wrap: wrap;
+  }
+  .group { display: flex; align-items: center; gap: 8px; }
+  .group-label { font-weight: bold; }
+  .group label { display: flex; align-items: center; gap: 3px; cursor: pointer; }
+  .group input[type=radio] { cursor: pointer; }
+  .group label.unavailable { color: #bbb; cursor: default; }
+  .group label.unavailable input { cursor: default; }
+  #file-label { color: #888; margin-left: auto; font-size: 11px; }
+  #stage {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+  }
+  canvas { max-width: 100%; max-height: 100%; display: block; }
+  #loading { position: absolute; color: #555; }
+  #nav {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 14px;
+    border-top: 1px solid #ccc;
+  }
+  button {
+    font-size: 13px;
+    border: 1px solid #aaa;
+    background: #fff;
+    padding: 3px 10px;
+    cursor: pointer;
+  }
+  button:hover { background: #eee; }
+  button:disabled { color: #bbb; cursor: default; background: #fff; }
+  button.on { background: #000; color: #fff; border-color: #000; }
+  #page-info { min-width: 60px; text-align: center; }
+  #sep { color: #ccc; }
+  input[type=range] { width: 90px; cursor: pointer; }
+  #fps-val { min-width: 38px; }
+</style>
+</head>
+<body>
+
+<div id="bar">
+  <div class="group">
+    <span class="group-label">regime</span>
+    <label><input type="radio" name="regime" value="LG"> LG</label>
+    <label><input type="radio" name="regime" value="LM"> LM</label>
+    <label><input type="radio" name="regime" value="LMG"> LMG</label>
+    <label><input type="radio" name="regime" value="MG"> MG</label>
+  </div>
+  <div class="group">
+    <span class="group-label">type</span>
+    <label><input type="radio" name="type" value="AS"> AS</label>
+    <label><input type="radio" name="type" value="TW"> TW</label>
+  </div>
+  <div class="group" id="eps-group">
+    <span class="group-label">eps</span>
+    <label><input type="radio" name="eps" value="1"> 1e-1</label>
+    <label><input type="radio" name="eps" value="2"> 1e-2</label>
+    <label><input type="radio" name="eps" value="3"> 1e-3</label>
+    <label><input type="radio" name="eps" value="4"> 1e-4</label>
+    <label><input type="radio" name="eps" value="5"> 1e-5</label>
+    <label><input type="radio" name="eps" value="6"> 1e-6</label>
+    <label><input type="radio" name="eps" value="8"> 1e-8</label>
+  </div>
+  <span id="file-label"></span>
+</div>
+
+<div id="stage">
+  <div id="loading">select a case above</div>
+  <canvas id="cv" style="display:none"></canvas>
+</div>
+
+<div id="nav">
+  <button id="btn-prev" disabled>&#8592;</button>
+  <button id="btn-next" disabled>&#8594;</button>
+  <span id="page-info">— / —</span>
+  <span id="sep">|</span>
+  <button id="btn-play" disabled>&#9654; play</button>
+  <input type="range" id="fps-slider" min="1" max="30" value="8" disabled>
+  <span id="fps-val">8 fps</span>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const FILES = {
+  "LG AS 1":  "LG AS/TEST-1_LG_AS__implicit__N_60__eps_1e-01.pdf",
+  "LG AS 2":  "LG AS/TEST-2_LG_AS__implicit__N_60__eps_1e-02.pdf",
+  "LG AS 3":  "LG AS/TEST-3_LG_AS__implicit__N_60__eps_1e-03.pdf",
+  "LG AS 4":  "LG AS/TEST-4_LG_AS__implicit__N_60__eps_1e-04.pdf",
+  "LG AS 8":  "LG AS/TEST-8_LG_AS__implicit__N_60__eps_1e-08.pdf",
+  "LG TW 3":  "LG TW/TEST-3_LG_TW__implicit__N_60__eps_1e-03.pdf",
+  "LG TW 4":  "LG TW/TEST-4_LG_TW__implicit__N_60__eps_1e-04.pdf",
+  "LG TW 8":  "LG TW/TEST-8_LG_TW__implicit__N_60__eps_1e-08.pdf",
+  "LM AS 1":  "LM AS/TEST-1_LM_AS__implicit__N_60__eps_1e-01.pdf",
+  "LM AS 2":  "LM AS/TEST-2_LM_AS__implicit__N_60__eps_1e-02.pdf",
+  "LM AS 3":  "LM AS/TEST-3_LM_AS__implicit__N_60__eps_1e-03.pdf",
+  "LM AS 4":  "LM AS/TEST-4_LM_AS__implicit__N_60__eps_1e-04.pdf",
+  "LM AS 5":  "LM AS/TEST-5_LM_AS__implicit__N_60__eps_1e-05.pdf",
+  "LM AS 6":  "LM AS/TEST-6_LM_AS__implicit__N_60__eps_1e-06.pdf",
+  "LMG AS 1": "LMG AS/TEST-1_LMG_AS__implicit__N_60__eps_1e-01.pdf",
+  "LMG AS 2": "LMG AS/TEST-2_LMG_AS__implicit__N_60__eps_1e-02.pdf",
+  "LMG AS 3": "LMG AS/TEST-3_LMG_AS__implicit__N_60__eps_1e-03.pdf",
+  "LMG AS 4": "LMG AS/TEST-4_LMG_AS__implicit__N_60__eps_1e-04.pdf",
+  "LMG AS 8": "LMG AS/TEST-8_LMG_AS__implicit__N_60__eps_1e-08.pdf",
+  "MG AS 1":  "MG AS/TEST-1_MG_AS__implicit__N_60__eps_1e-01.pdf",
+  "MG AS 2":  "MG AS/TEST-2_MG_AS__implicit__N_60__eps_1e-02.pdf",
+  "MG AS 3":  "MG AS/TEST-3_MG_AS__implicit__N_60__eps_1e-03.pdf",
+  "MG AS 4":  "MG AS/TEST-4_MG_AS__implicit__N_60__eps_1e-04.pdf",
+  "MG AS 5":  "MG AS/TEST-5_MG_AS__implicit__N_60__eps_1e-05.pdf",
+  "MG AS 6":  "MG AS/TEST-6_MG_AS__implicit__N_60__eps_1e-06.pdf",
+  "MG TW 1":  "MG TW/TEST-1_MG_TW__implicit__N_60__eps_1e-01.pdf",
+  "MG TW 2":  "MG TW/TEST-2_MG_TW__implicit__N_60__eps_1e-02.pdf",
+  "MG TW 3":  "MG TW/TEST-3_MG_TW__implicit__N_60__eps_1e-03.pdf",
+  "MG TW 4":  "MG TW/TEST-4_MG_TW__implicit__N_60__eps_1e-04.pdf",
+  "MG TW 5":  "MG TW/TEST-5_MG_TW__implicit__N_60__eps_1e-05.pdf",
+  "MG TW 6":  "MG TW/TEST-6_MG_TW__implicit__N_60__eps_1e-06.pdf",
+};
+
+let pages = [], current = 0, playing = false, playTimer = null, loadController = null;
+
+const cv      = document.getElementById('cv');
+const ctx     = cv.getContext('2d');
+const loading = document.getElementById('loading');
+const btnPrev = document.getElementById('btn-prev');
+const btnNext = document.getElementById('btn-next');
+const btnPlay = document.getElementById('btn-play');
+const pgInfo  = document.getElementById('page-info');
+const fileLbl = document.getElementById('file-label');
+const slider  = document.getElementById('fps-slider');
+const fpsVal  = document.getElementById('fps-val');
+
+slider.oninput = () => { fpsVal.textContent = slider.value + ' fps'; };
+
+function getRadio(name) {
+  const el = document.querySelector(`input[name="${name}"]:checked`);
+  return el ? el.value : null;
+}
+
+function updateEpsAvailability() {
+  const regime = getRadio('regime');
+  const type   = getRadio('type');
+  document.querySelectorAll('#eps-group label').forEach(lbl => {
+    const val    = lbl.querySelector('input').value;
+    const exists = !regime || !type || (`${regime} ${type} ${val}` in FILES);
+    lbl.classList.toggle('unavailable', !exists);
+    lbl.querySelector('input').disabled = !exists;
+    if (!exists && lbl.querySelector('input').checked)
+      lbl.querySelector('input').checked = false;
+  });
+}
+
+function tryLoad() {
+  const regime = getRadio('regime');
+  const type   = getRadio('type');
+  const eps    = getRadio('eps');
+  if (!regime || !type || !eps) return;
+  const path = FILES[`${regime} ${type} ${eps}`];
+  if (path) loadPDF(path);
+}
+
+document.querySelectorAll('input[name="regime"], input[name="type"]').forEach(r =>
+  r.addEventListener('change', () => { updateEpsAvailability(); tryLoad(); })
+);
+document.querySelectorAll('input[name="eps"]').forEach(r =>
+  r.addEventListener('change', tryLoad)
+);
+
+const BATCH = 8; // pages rendered in parallel
+
+async function loadPDF(path) {
+  stopPlay();
+  pages = []; current = 0;
+
+  cv.style.display = 'none';
+  loading.textContent = '.';
+  loading.style.display = 'block';
+  fileLbl.textContent = path;
+  setNav(false);
+
+  if (loadController) loadController.abort();
+  loadController = new AbortController();
+  const signal = loadController.signal;
+
+  let pdf;
+  try {
+    pdf = await pdfjsLib.getDocument(path).promise;
+  } catch(e) {
+    loading.textContent = `not found: ${path}`;
+    return;
+  }
+
+  const n     = pdf.numPages;
+  const scale = window.devicePixelRatio * 1.5;
+  const result = new Array(n);
+
+  // render in parallel batches
+  for (let start = 0; start < n; start += BATCH) {
+    if (signal.aborted) return;
+    const end = Math.min(start + BATCH, n);
+    await Promise.all(
+      Array.from({ length: end - start }, async (_, j) => {
+        const i    = start + j;
+        const page = await pdf.getPage(i + 1);
+        const vp   = page.getViewport({ scale });
+        const off  = new OffscreenCanvas(vp.width, vp.height);
+        await page.render({ canvasContext: off.getContext('2d'), viewport: vp }).promise;
+        result[i]  = await createImageBitmap(off);
+      })
+    );
+    // show first page as soon as first batch is done
+    if (start === 0 && !signal.aborted) {
+      pages = result.slice(0, end);
+      loading.style.display = 'none';
+      cv.style.display = 'block';
+      showPage(0);
+      setNav(true);
+      slider.disabled = false;
+    }
+  }
+
+  if (signal.aborted) return;
+  pages = result;
+  showPage(current); // refresh counts
+}
+
+function showPage(idx) {
+  if (!pages.length) return;
+  idx = Math.max(0, Math.min(pages.length - 1, idx));
+  current = idx;
+  const bmp = pages[idx];
+  cv.width  = bmp.width;
+  cv.height = bmp.height;
+  ctx.drawImage(bmp, 0, 0);
+  pgInfo.textContent = `${idx + 1} / ${pages.length}`;
+  btnPrev.disabled   = idx === 0;
+  btnNext.disabled   = idx === pages.length - 1;
+}
+
+function setNav(on) {
+  btnPrev.disabled = !on;
+  btnNext.disabled = !on;
+  btnPlay.disabled = !on;
+  if (!on) pgInfo.textContent = '— / —';
+}
+
+btnPrev.onclick = () => { stopPlay(); showPage(current - 1); };
+btnNext.onclick = () => { stopPlay(); showPage(current + 1); };
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft')  { stopPlay(); showPage(current - 1); }
+  if (e.key === 'ArrowRight') { stopPlay(); showPage(current + 1); }
+  if (e.key === ' ')          { e.preventDefault(); togglePlay(); }
+});
+
+function startPlay() {
+  if (!pages.length) return;
+  playing = true;
+  btnPlay.textContent = '⏸ pause';
+  btnPlay.classList.add('on');
+  let last = 0;
+  function tick(ts) {
+    if (!playing) return;
+    if (ts - last >= 1000 / parseInt(slider.value)) {
+      last = ts;
+      showPage(current >= pages.length - 1 ? 0 : current + 1);
+    }
+    playTimer = requestAnimationFrame(tick);
+  }
+  playTimer = requestAnimationFrame(tick);
+}
+
+function stopPlay() {
+  playing = false;
+  if (playTimer) { cancelAnimationFrame(playTimer); playTimer = null; }
+  btnPlay.textContent = '▶ play';
+  btnPlay.classList.remove('on');
+}
+
+function togglePlay() { playing ? stopPlay() : startPlay(); }
+btnPlay.onclick = togglePlay;
+</script>
+</body>
+</html>
