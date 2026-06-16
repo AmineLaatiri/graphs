@@ -1,4 +1,7 @@
 {
+  "(root)": [
+    "TEST-2_LMG_AS__implicit__N_800__eps_1e-02.pdf"
+  ],
   "AUTO/LG AS": [
     "TEST-1_LG_AS__implicit__N_60__eps_1e-01.pdf",
     "TEST-3_LG_AS__implicit__N_60__eps_1e-03.pdf",
