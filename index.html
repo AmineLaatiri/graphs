@@ -19,18 +19,33 @@
   /* ── sidebar ── */
   #sidebar {
     width: 220px;
-    min-width: 220px;
+    min-width: 150px;
+    max-width: 70vw;
     border-right: 1px solid #ccc;
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    position: relative;
+    flex-shrink: 0;
     transition: width .15s, min-width .15s;
   }
+  #sidebar.resizing { transition: none; }
   #sidebar.collapsed {
     width: 0;
     min-width: 0;
     border-right: none;
   }
+  #sidebar.collapsed #resize-handle { display: none; }
+  #resize-handle {
+    position: absolute;
+    top: 0;
+    right: -3px;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 10;
+  }
+  #resize-handle:hover { background: rgba(0,0,0,.08); }
   #sidebar-header {
     padding: 8px 10px;
     border-bottom: 1px solid #ccc;
@@ -142,6 +157,7 @@
 <div id="sidebar">
   <div id="sidebar-header">Fichiers</div>
   <div id="tree"><em style="padding:8px 12px;display:block;color:#aaa">…</em></div>
+  <div id="resize-handle"></div>
 </div>
 
 <div id="main">
@@ -171,6 +187,29 @@ const sidebar = document.getElementById('sidebar');
 document.getElementById('btn-tree').onclick = () =>
   sidebar.classList.toggle('collapsed');
 
+// ── sidebar resize (drag handle) ────────────────────────────────────────────
+const resizeHandle = document.getElementById('resize-handle');
+resizeHandle.addEventListener('mousedown', e => {
+  e.preventDefault();
+  sidebar.classList.add('resizing');
+  const startX = e.clientX;
+  const startW = sidebar.getBoundingClientRect().width;
+
+  function onMove(ev) {
+    const w = startW + (ev.clientX - startX);
+    const min = parseFloat(getComputedStyle(sidebar).minWidth) || 150;
+    const max = window.innerWidth * 0.7;
+    sidebar.style.width = Math.max(min, Math.min(max, w)) + 'px';
+  }
+  function onUp() {
+    sidebar.classList.remove('resizing');
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  }
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+});
+
 // ── build tree from files.json ──────────────────────────────────────────────
 const treeEl = document.getElementById('tree');
 
@@ -186,34 +225,48 @@ async function buildTree() {
   }
 
   treeEl.innerHTML = '';
+
+  function makeFileRow(filename, path) {
+    const label = filename.replace(/\.pdf$/i, '');
+    const fileRow = document.createElement('div');
+    fileRow.className = 'file-row';
+    fileRow.textContent = label;
+    fileRow.title = path;
+    fileRow.onclick = () => {
+      document.querySelectorAll('.file-row.active').forEach(r => r.classList.remove('active'));
+      fileRow.classList.add('active');
+      loadPDF(path);
+    };
+    return fileRow;
+  }
+
   for (const [folder, files] of Object.entries(manifest)) {
     if (!files.length) continue;
+
+    if (folder === '(root)') {
+      // loose files at repo root: render directly, no folder wrapper
+      for (const filename of files) {
+        const row = makeFileRow(filename, filename);
+        row.style.paddingLeft = '10px';
+        treeEl.appendChild(row);
+      }
+      continue;
+    }
 
     const folderDiv = document.createElement('div');
     folderDiv.className = 'folder';
 
     const row = document.createElement('div');
     row.className = 'folder-row';
-    row.innerHTML = `<span class="folder-arrow">▶</span>📁 ${folder === '(root)' ? 'racine' : folder}`;
+    row.innerHTML = `<span class="folder-arrow">▶</span>📁 ${folder}`;
     row.onclick = () => folderDiv.classList.toggle('open');
 
     const children = document.createElement('div');
     children.className = 'folder-children';
 
     for (const filename of files) {
-      const path  = folder === '(root)' ? filename : `${folder}/${filename}`;
-      const label = filename.replace(/\.pdf$/i, '');
-
-      const fileRow = document.createElement('div');
-      fileRow.className = 'file-row';
-      fileRow.textContent = label;
-      fileRow.title = path;
-      fileRow.onclick = () => {
-        document.querySelectorAll('.file-row.active').forEach(r => r.classList.remove('active'));
-        fileRow.classList.add('active');
-        loadPDF(path);
-      };
-      children.appendChild(fileRow);
+      const path = `${folder}/${filename}`;
+      children.appendChild(makeFileRow(filename, path));
     }
 
     folderDiv.appendChild(row);
@@ -239,7 +292,7 @@ const fpsVal  = document.getElementById('fps-val');
 
 slider.oninput = () => { fpsVal.textContent = slider.value; };
 
-const BATCH = 8;
+const BATCH = 16;
 
 async function loadPDF(path) {
   stopPlay();
@@ -262,8 +315,11 @@ async function loadPDF(path) {
     return;
   }
 
-  const n      = pdf.numPages;
-  const scale  = window.devicePixelRatio * 1.5;
+  const n = pdf.numPages;
+  // Cap effective scale: full devicePixelRatio*1.5 is overkill for plot pages
+  // and gets brutally slow past a few hundred pages. 1.5x fixed is plenty
+  // sharp on screen and renders far faster.
+  const scale  = 1.5;
   const result = new Array(n);
 
   for (let start = 0; start < n; start += BATCH) {
@@ -286,6 +342,9 @@ async function loadPDF(path) {
       showPage(0);
       setNav(true, false);
       slider.disabled = false;
+    }
+    if (!signal.aborted && end < n) {
+      pgInfo.textContent = `chargement ${end}/${n}…`;
     }
   }
   if (signal.aborted) return;
