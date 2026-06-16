@@ -139,7 +139,7 @@
 </head>
 <body>
 
-<div id="sidebar" class="collapsed">
+<div id="sidebar">
   <div id="sidebar-header">Fichiers</div>
   <div id="tree"><em style="padding:8px 12px;display:block;color:#aaa">…</em></div>
 </div>
@@ -156,8 +156,8 @@
     <span id="page-info">— / —</span>
     <span id="sep">|</span>
     <button id="btn-play" disabled>&#9654;</button>
-    <input type="range" id="fps-slider" min="1" max="30" value="8" disabled>
-    <span id="fps-val">8</span>
+    <input type="range" id="fps-slider" min="1" max="30" value="6" disabled>
+    <span id="fps-val">6</span>
   </div>
 </div>
 
@@ -225,7 +225,7 @@ async function buildTree() {
 buildTree();
 
 // ── PDF viewer ──────────────────────────────────────────────────────────────
-let pages = [], current = 0, playing = false, playTimer = null, loadController = null;
+let pages = [], current = 0, playing = false, playTimer = null, loadController = null, fullyLoaded = false;
 
 const cv      = document.getElementById('cv');
 const ctx     = cv.getContext('2d');
@@ -244,8 +244,9 @@ const BATCH = 8;
 async function loadPDF(path) {
   stopPlay();
   pages = []; current = 0;
+  fullyLoaded = false;
   cv.style.display = 'none';
-  loading.textContent = '…';
+  loading.textContent = 'Chargement…';
   loading.style.display = 'block';
   setNav(false);
 
@@ -283,12 +284,14 @@ async function loadPDF(path) {
       loading.style.display = 'none';
       cv.style.display = 'block';
       showPage(0);
-      setNav(true);
+      setNav(true, false);
       slider.disabled = false;
     }
   }
   if (signal.aborted) return;
   pages = result;
+  fullyLoaded = true;
+  setNav(true, true);
   showPage(current);
 }
 
@@ -305,10 +308,10 @@ function showPage(idx) {
   btnNext.disabled   = idx === pages.length - 1;
 }
 
-function setNav(on) {
+function setNav(on, canPlay) {
   btnPrev.disabled = !on;
   btnNext.disabled = !on;
-  btnPlay.disabled = !on;
+  btnPlay.disabled = !canPlay;
   if (!on) pgInfo.textContent = '— / —';
 }
 
@@ -322,7 +325,7 @@ document.addEventListener('keydown', e => {
 });
 
 function startPlay() {
-  if (!pages.length) return;
+  if (!pages.length || !fullyLoaded) return;
   playing = true;
   btnPlay.textContent = '⏸ pause';
   btnPlay.classList.add('on');
