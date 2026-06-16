@@ -292,14 +292,14 @@ const fpsVal  = document.getElementById('fps-val');
 
 slider.oninput = () => { fpsVal.textContent = slider.value; };
 
-const BATCH = 16;
+const CONCURRENCY = 8; // pages rendered in parallel at any time
 
 async function loadPDF(path) {
   stopPlay();
   pages = []; current = 0;
   fullyLoaded = false;
   cv.style.display = 'none';
-  loading.textContent = 'Chargement…';
+  loading.textContent = 'Chargement… 0%';
   loading.style.display = 'block';
   setNav(false);
 
@@ -314,44 +314,47 @@ async function loadPDF(path) {
     loading.textContent = `introuvable : ${path}`;
     return;
   }
+  if (signal.aborted) return;
 
   const n = pdf.numPages;
-  // Cap effective scale: full devicePixelRatio*1.5 is overkill for plot pages
-  // and gets brutally slow past a few hundred pages. 1.5x fixed is plenty
-  // sharp on screen and renders far faster.
-  const scale  = 1.5;
+  const scale  = 1.5; // plenty sharp on screen, far faster than devicePixelRatio*1.5
   const result = new Array(n);
+  let done = 0;
 
-  for (let start = 0; start < n; start += BATCH) {
-    if (signal.aborted) return;
-    const end = Math.min(start + BATCH, n);
-    await Promise.all(
-      Array.from({ length: end - start }, async (_, j) => {
-        const i    = start + j;
-        const page = await pdf.getPage(i + 1);
-        const vp   = page.getViewport({ scale });
-        const off  = new OffscreenCanvas(vp.width, vp.height);
-        await page.render({ canvasContext: off.getContext('2d'), viewport: vp }).promise;
-        result[i]  = await createImageBitmap(off);
-      })
-    );
-    if (start === 0 && !signal.aborted) {
-      pages = result.slice(0, end);
-      loading.style.display = 'none';
-      cv.style.display = 'block';
-      showPage(0);
-      setNav(true, false);
-      slider.disabled = false;
-    }
-    if (!signal.aborted && end < n) {
-      pgInfo.textContent = `chargement ${end}/${n}…`;
+  async function renderOne(i) {
+    const page = await pdf.getPage(i + 1);
+    const vp   = page.getViewport({ scale });
+    const off  = new OffscreenCanvas(vp.width, vp.height);
+    await page.render({ canvasContext: off.getContext('2d'), viewport: vp }).promise;
+    result[i] = await createImageBitmap(off);
+    done++;
+    if (!signal.aborted) {
+      loading.textContent = `Chargement… ${Math.round(done / n * 100)}%`;
     }
   }
+
+  // sliding-window pool: keep CONCURRENCY renders in flight continuously,
+  // no batch-boundary stalls waiting for the slowest page in each chunk
+  let next = 0;
+  async function worker() {
+    while (next < n) {
+      if (signal.aborted) return;
+      const i = next++;
+      await renderOne(i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, n) }, worker));
+
   if (signal.aborted) return;
+
+  // nothing is shown or enabled until every page has rendered
   pages = result;
   fullyLoaded = true;
+  loading.style.display = 'none';
+  cv.style.display = 'block';
+  showPage(0);
   setNav(true, true);
-  showPage(current);
+  slider.disabled = false;
 }
 
 function showPage(idx) {
