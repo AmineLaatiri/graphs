@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>4LMNC viewer</title>
+<title>4LMNC</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -140,25 +140,24 @@
 <body>
 
 <div id="sidebar">
-  <div id="sidebar-header">Files</div>
-  <div id="tree"><em style="padding:8px 12px;display:block;color:#aaa">scanning…</em></div>
+  <div id="sidebar-header">Fichiers</div>
+  <div id="tree"><em style="padding:8px 12px;display:block;color:#aaa">…</em></div>
 </div>
 
 <div id="main">
   <div id="stage">
-    <div id="loading">select a file</div>
+    <div id="loading"></div>
     <canvas id="cv" style="display:none"></canvas>
   </div>
   <div id="nav">
-    <button id="btn-tree" title="Toggle file tree">☰</button>
+    <button id="btn-tree" title="Fichiers">☰</button>
     <button id="btn-prev" disabled>&#8592;</button>
     <button id="btn-next" disabled>&#8594;</button>
     <span id="page-info">— / —</span>
     <span id="sep">|</span>
-    <button id="btn-play" disabled>&#9654; play</button>
+    <button id="btn-play" disabled>&#9654;</button>
     <input type="range" id="fps-slider" min="1" max="30" value="8" disabled>
-    <span id="fps-val">8 fps</span>
-    <span id="file-label"></span>
+    <span id="fps-val">8</span>
   </div>
 </div>
 
@@ -172,91 +171,55 @@ const sidebar = document.getElementById('sidebar');
 document.getElementById('btn-tree').onclick = () =>
   sidebar.classList.toggle('collapsed');
 
-// ── directory scan ──────────────────────────────────────────────────────────
-// Strategy: fetch the directory listing from the server.
-// Works when served via a standard file server that renders directory listings
-// (e.g. python -m http.server, nginx autoindex on, etc.).
-// Falls back to a manual scan hint if the server doesn't expose listings.
-
+// ── build tree from files.json ──────────────────────────────────────────────
 const treeEl = document.getElementById('tree');
 
 async function buildTree() {
-  // Scan root for folders, then each folder for PDFs
-  const rootEntries = await listDir('./');
-  if (!rootEntries) {
-    treeEl.innerHTML = '<em style="padding:8px 12px;display:block;color:#aaa">no listing available<br>need a file server with directory index</em>';
-    return;
-  }
-
-  // filter to directories (entries ending with /)
-  const dirs = rootEntries.filter(e => e.endsWith('/'));
-  if (dirs.length === 0) {
-    // maybe PDFs are in root
-    const pdfs = rootEntries.filter(e => e.toLowerCase().endsWith('.pdf'));
-    if (pdfs.length) buildFolderNode(treeEl, '.', pdfs);
-    else treeEl.innerHTML = '<em style="padding:8px 12px;display:block;color:#aaa">no PDFs found</em>';
+  let manifest;
+  try {
+    const res = await fetch('files.json');
+    if (!res.ok) throw new Error(res.status);
+    manifest = await res.json();
+  } catch(e) {
+    treeEl.innerHTML = '<em style="padding:8px 12px;display:block;color:#c00">files.json manquant</em>';
     return;
   }
 
   treeEl.innerHTML = '';
-  for (const dir of dirs) {
-    const name = dir.replace(/\/$/, '');
-    const files = await listDir('./' + dir);
-    const pdfs  = files ? files.filter(e => e.toLowerCase().endsWith('.pdf')) : [];
-    if (pdfs.length === 0) continue;
-    const paths = pdfs.map(f => name + '/' + f);
-    buildFolderNode(treeEl, name, paths);
+  for (const [folder, files] of Object.entries(manifest)) {
+    if (!files.length) continue;
+
+    const folderDiv = document.createElement('div');
+    folderDiv.className = 'folder open';
+
+    const row = document.createElement('div');
+    row.className = 'folder-row';
+    row.innerHTML = `<span class="folder-arrow">▶</span>📁 ${folder}`;
+    row.onclick = () => folderDiv.classList.toggle('open');
+
+    const children = document.createElement('div');
+    children.className = 'folder-children';
+
+    for (const filename of files) {
+      const path  = `${folder}/${filename}`;
+      const label = filename.replace(/\.pdf$/i, '');
+
+      const fileRow = document.createElement('div');
+      fileRow.className = 'file-row';
+      fileRow.textContent = label;
+      fileRow.title = path;
+      fileRow.onclick = () => {
+        document.querySelectorAll('.file-row.active').forEach(r => r.classList.remove('active'));
+        fileRow.classList.add('active');
+        loadPDF(path);
+      };
+      children.appendChild(fileRow);
+    }
+
+    folderDiv.appendChild(row);
+    folderDiv.appendChild(children);
+    treeEl.appendChild(folderDiv);
   }
-}
-
-// Parse directory listing HTML to extract linked filenames/dirs
-async function listDir(url) {
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const html = await res.text();
-    const doc  = new DOMParser().parseFromString(html, 'text/html');
-    const links = [...doc.querySelectorAll('a[href]')]
-      .map(a => a.getAttribute('href'))
-      // exclude parent dir links, query params, absolute URLs
-      .filter(h => h && !h.startsWith('?') && !h.startsWith('/') && !h.startsWith('http') && h !== '../');
-    return links.length ? links : null;
-  } catch { return null; }
-}
-
-function buildFolderNode(parent, name, paths) {
-  const folderDiv = document.createElement('div');
-  folderDiv.className = 'folder open';
-
-  const row = document.createElement('div');
-  row.className = 'folder-row';
-  row.innerHTML = `<span class="folder-arrow">▶</span>📁 ${name}`;
-  row.onclick = () => folderDiv.classList.toggle('open');
-
-  const children = document.createElement('div');
-  children.className = 'folder-children';
-
-  for (const path of paths) {
-    const filename = path.split('/').pop();
-    // pretty-print: strip common boilerplate, keep TEST-N + eps
-    const label = filename.replace(/\.pdf$/i, '');
-
-    const fileRow = document.createElement('div');
-    fileRow.className = 'file-row';
-    fileRow.textContent = label;
-    fileRow.title = path;
-    fileRow.dataset.path = path;
-    fileRow.onclick = () => {
-      document.querySelectorAll('.file-row.active').forEach(r => r.classList.remove('active'));
-      fileRow.classList.add('active');
-      loadPDF(path);
-    };
-    children.appendChild(fileRow);
-  }
-
-  folderDiv.appendChild(row);
-  folderDiv.appendChild(children);
-  parent.appendChild(folderDiv);
 }
 
 buildTree();
@@ -271,11 +234,10 @@ const btnPrev = document.getElementById('btn-prev');
 const btnNext = document.getElementById('btn-next');
 const btnPlay = document.getElementById('btn-play');
 const pgInfo  = document.getElementById('page-info');
-const fileLbl = document.getElementById('file-label');
 const slider  = document.getElementById('fps-slider');
 const fpsVal  = document.getElementById('fps-val');
 
-slider.oninput = () => { fpsVal.textContent = slider.value + ' fps'; };
+slider.oninput = () => { fpsVal.textContent = slider.value; };
 
 const BATCH = 8;
 
@@ -283,9 +245,8 @@ async function loadPDF(path) {
   stopPlay();
   pages = []; current = 0;
   cv.style.display = 'none';
-  loading.textContent = 'loading…';
+  loading.textContent = '…';
   loading.style.display = 'block';
-  fileLbl.textContent = path;
   setNav(false);
 
   if (loadController) loadController.abort();
@@ -296,7 +257,7 @@ async function loadPDF(path) {
   try {
     pdf = await pdfjsLib.getDocument(path).promise;
   } catch(e) {
-    loading.textContent = `not found: ${path}`;
+    loading.textContent = `introuvable : ${path}`;
     return;
   }
 
