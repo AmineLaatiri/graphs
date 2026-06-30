@@ -91,8 +91,8 @@
     <input type="range" id="seek-bar" min="0" value="0" step="0.01" disabled>
     
     <span id="sep">|</span>
-    <input type="range" id="speed-slider" min="0.1" max="10" step="0.1" value="1" disabled>
-    <span id="speed-val">1.0x</span>
+    <input type="range" id="speed-slider" min="0.1" max="16" step="0.1" value="16" disabled>
+    <span id="speed-val">16.0x</span>
   </div>
 </div>
 
@@ -198,6 +198,7 @@ function buildTree() {
       vid.style.display = 'block';
       vid.src = filename;
       vid.load();
+      vid.playbackRate = parseFloat(slider.value);
       vid.play();
       btnPrev.disabled = btnNext.disabled = btnPlay.disabled = slider.disabled = seekBar.disabled = false;
       updatePlayButton();
@@ -254,6 +255,10 @@ vid.addEventListener('timeupdate', () => {
     seekBar.max = vid.duration;
     seekBar.value = vid.currentTime;
   }
+});
+
+vid.addEventListener('loadedmetadata', () => {
+  vid.playbackRate = parseFloat(slider.value);
 });
 
 vid.addEventListener('play', updatePlayButton);
