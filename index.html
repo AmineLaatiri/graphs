@@ -86,13 +86,14 @@
     <button id="btn-prev" disabled>&#8592;</button>
     <button id="btn-play" disabled>▶</button>
     <button id="btn-next" disabled>&#8594;</button>
+    <button id="btn-debug" disabled>DEBUG</button>
     <span id="page-info">0.0 / 0.0</span>
     
     <input type="range" id="seek-bar" min="0" value="0" step="0.01" disabled>
     
     <span id="sep">|</span>
-    <input type="range" id="speed-slider" min="0.1" max="16" step="0.1" value="16" disabled>
-    <span id="speed-val">16.0x</span>
+    <input type="range" id="speed-slider" min="0.1" max="10" step="0.1" value="1" disabled>
+    <span id="speed-val">1.0x</span>
   </div>
 </div>
 
@@ -168,10 +169,48 @@ const vid = document.getElementById('vid');
 const btnPrev = document.getElementById('btn-prev');
 const btnNext = document.getElementById('btn-next');
 const btnPlay = document.getElementById('btn-play');
+const btnDebug = document.getElementById('btn-debug');
 const pgInfo  = document.getElementById('page-info');
 const slider  = document.getElementById('speed-slider');
 const speedVal = document.getElementById('speed-val');
 const seekBar = document.getElementById('seek-bar');
+
+let currentFile = null;
+let debugMode = false;
+
+function debugName(filename) {
+  return filename.replace(/\.mp4$/i, '_DEBUG.mp4');
+}
+
+function activeSrc(filename) {
+  return debugMode ? debugName(filename) : filename;
+}
+
+// Loads a file into the player. If preserveTime is true (used when toggling
+// DEBUG mode on the same clip), keeps the current playhead position and
+// play/pause state instead of resetting to frame 0.
+function loadVideo(filename, preserveTime) {
+  const t = vid.currentTime;
+  const wasPlaying = !vid.paused;
+
+  currentFile = filename;
+  vid.src = activeSrc(filename);
+  vid.load();
+
+  if (preserveTime) {
+    const onReady = () => {
+      vid.currentTime = t;
+      if (wasPlaying) vid.play();
+      vid.removeEventListener('loadedmetadata', onReady);
+    };
+    vid.addEventListener('loadedmetadata', onReady);
+  } else {
+    vid.play();
+  }
+
+  btnPrev.disabled = btnNext.disabled = btnPlay.disabled = slider.disabled = seekBar.disabled = btnDebug.disabled = false;
+  updatePlayButton();
+}
 
 function buildTree() {
   treeEl.innerHTML = '';
@@ -196,12 +235,7 @@ function buildTree() {
       document.querySelectorAll('.file-row.active').forEach(r => r.classList.remove('active'));
       fileRow.classList.add('active');
       vid.style.display = 'block';
-      vid.src = filename;
-      vid.load();
-      vid.playbackRate = parseFloat(slider.value);
-      vid.play();
-      btnPrev.disabled = btnNext.disabled = btnPlay.disabled = slider.disabled = seekBar.disabled = false;
-      updatePlayButton();
+      loadVideo(filename, false);
     };
     return fileRow;
   }
@@ -257,10 +291,6 @@ vid.addEventListener('timeupdate', () => {
   }
 });
 
-vid.addEventListener('loadedmetadata', () => {
-  vid.playbackRate = parseFloat(slider.value);
-});
-
 vid.addEventListener('play', updatePlayButton);
 vid.addEventListener('pause', updatePlayButton);
 
@@ -268,6 +298,13 @@ function updatePlayButton() {
   btnPlay.textContent = vid.paused ? '▶' : '⏸';
   vid.paused ? btnPlay.classList.remove('on') : btnPlay.classList.add('on');
 }
+
+btnDebug.onclick = () => {
+  if (!currentFile) return;
+  debugMode = !debugMode;
+  btnDebug.classList.toggle('on', debugMode);
+  loadVideo(currentFile, true);
+};
 
 btnPlay.onclick = () => { vid.paused ? vid.play() : vid.pause(); };
 btnPrev.onclick = () => { vid.pause(); vid.currentTime = Math.max(0, vid.currentTime - 0.2); };
